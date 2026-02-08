@@ -1,0 +1,52 @@
+function limpiarRutCodigoYObservacion() {
+  // 1. Accedemos explícitamente a la hoja "SISTEMA" por su nombre
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var hoja = ss.getSheetByName("SISTEMA");
+
+  // Validación por si acaso alguien cambió el nombre de la hoja
+  if (!hoja) {
+    Browser.msgBox("Error: No se encontró la hoja llamada 'SISTEMA'.");
+    return;
+  }
+
+  var ultimaFila = hoja.getLastRow();
+
+  // 2. Verificamos que haya datos más allá del encabezado (fila 1)
+  if (ultimaFila < 2) {
+    Logger.log("No hay datos para limpiar.");
+    return;
+  }
+
+  // 3. Primero eliminamos las protecciones (si existen) para evitar errores de permiso al borrar
+  eliminarProteccionesColumnaRut(hoja);
+
+  // 4. Usamos RangeList para limpiar todas las columnas de una sola vez
+  // Esto es más rápido y eficiente
+  hoja.getRangeList([
+    'A2:A' + ultimaFila, // RUT
+    'B2:B' + ultimaFila, // VALIDACION DE RUT
+    'G2:G' + ultimaFila, // ESTADO
+    'H2:H' + ultimaFila, // VALIDACION DE CORREO
+    'K2:K' + ultimaFila, // CODIGO
+    'M2:M' + ultimaFila  // OBSERVACION
+  ]).clearContent();
+  
+  SpreadsheetApp.flush(); // Fuerza a aplicar los cambios visualmente
+  Browser.msgBox("Datos limpiados correctamente.");
+}
+
+function eliminarProteccionesColumnaRut(hoja) {
+  var protecciones = hoja.getProtections(SpreadsheetApp.ProtectionType.RANGE);
+  for (var i = 0; i < protecciones.length; i++) {
+    var protection = protecciones[i];
+    var protectedRange = protection.getRange();
+    
+    // Verifica si la protección está en la columna A (RUT)
+    // Y verificamos que el rango protegido esté dentro de la hoja correcta
+    if (protectedRange.getSheet().getName() == "SISTEMA" && protectedRange.getColumn() === 1) { 
+      if (protection.canEdit()) {
+        protection.remove();
+      }
+    }
+  }
+}
