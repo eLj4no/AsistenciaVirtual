@@ -1,0 +1,100 @@
+function enviarCorreoConAdjuntoPDF() {
+  // Acceder a la hoja activa
+  var hoja = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  
+  // Obtener los datos de la fila editada
+  var rangoEditado = SpreadsheetApp.getActiveRange();
+  var fila = rangoEditado.getRow();
+  var rut = hoja.getRange(fila, 1).getValue(); // Columna A (RUT)
+  var nombre = hoja.getRange(fila, 3).getValue(); // Columna B (NOMBRE) //MODIFICADO MANUALMENTE
+  var correo = hoja.getRange(fila, 10).getValue(); // Columna J (CORREO) //MODIFICADO MANUALMENTE
+  var asamblea = hoja.getRange(fila, 12).getValue(); // Nueva columna L (ASAMBLEA) //MODIFICADO MANUALMENTE
+  
+  // Verificar si la fila es mayor que 1 (para evitar el encabezado)
+  if (fila > 1) {
+    // Verificar si ya existe un código en la columna "CODIGO"
+    var codigoExistente = hoja.getRange(fila, 11).getValue(); // Columna J (CODIGO)
+    var codigo = codigoExistente || generarCodigoUnico(11);
+    
+    // Establecer el código en la celda (no cambia si ya existe)
+    hoja.getRange(fila, 11).setValue(codigo);
+    
+    // Proteger la celda de la columna "RUT" para evitar modificaciones
+    protegerCeldaRut(hoja, fila);
+  }
+  
+  // ID de la plantilla de Google Docs
+  var templateId = '1dt4zffbGfriGzr1Uk10Sri4PJEvWfebmr63Gaobdp-w'; // Reemplaza con el ID de tu plantilla de Google Docs
+  
+  // Crear una copia de la plantilla
+  var docFile = DriveApp.getFileById(templateId);
+  var copiedFile = docFile.makeCopy('Plantilla temporal');
+  
+  // Acceder al documento copiado
+  var doc = DocumentApp.openById(copiedFile.getId());
+  var body = doc.getBody();
+  
+  // Reemplazar los marcadores con los datos del socio
+  body.replaceText('{NOMBRE}', nombre);
+  body.replaceText('{RUT}', rut);
+  if (fila > 1) {
+    body.replaceText('{CODIGO}', codigo); // Reemplazar el código en la plantilla
+    body.replaceText('{ASAMBLEA}', asamblea); // Nueva línea para reemplazar el mes de la asamblea
+  }
+  
+  // Guardar y cerrar el documento
+  doc.saveAndClose();
+  
+  // Convertir el documento a PDF
+  var pdfBlob = copiedFile.getAs(MimeType.PDF);
+  pdfBlob.setName(nombre + ' - Asistencia.pdf');
+  
+  // Enviar el correo electrónico con el PDF adjunto
+  var asunto = 'Validación de Asistencia - Asamblea Sindical ' + asamblea;
+  var cuerpo = 'Estimado/a ' + nombre + ',\n\n' +
+               'Se ha registrado su asistencia a la asamblea sindical del mes de ' + asamblea + '.\n\n' +
+               '*Si al final del mes aparece con multa en su liquidacion de sueldo, puede apelar con el archivo adjunto en este correo en la pagina de apelación de multa del sindicato.\n\n' +
+               'https://www.sindicatoslim3.com/afiliados\n\n' + 
+               'Saludos,\n' +
+               'Atte. Dpto Comunicaciones SLIM n°3';
+  
+  MailApp.sendEmail({
+    to: correo,
+    subject: asunto,
+    body: cuerpo,
+    attachments: [pdfBlob]
+  });
+  
+  // Eliminar el archivo temporal de Google Docs
+  DriveApp.getFileById(copiedFile.getId()).setTrashed(true);
+  
+  // Opcional: Actualizar la columna "OBSERVACIÓN" para indicar que se envió el correo
+  if (fila > 1) {
+    hoja.getRange(fila, 8).setValue('Asistencia enviada al correo');
+  }
+}
+
+// Función para generar un código único alfanumérico
+function generarCodigoUnico(length) {
+  var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  var result = '';
+  for (var i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
+// Función para proteger la celda de la columna "RUT"
+function protegerCeldaRut(hoja, fila) {
+  if (fila > 1) {
+    var celdaRut = hoja.getRange(fila, 1); // Columna A (RUT)
+    var protection = celdaRut.protect().setDescription('RUT Protegido - Fila ' + fila);
+    // Establecer solo al usuario actual como editor (administrador)
+    var me = Session.getEffectiveUser();
+    protection.addEditor(me);
+    protection.removeEditors(protection.getEditors());
+    if (protection.canDomainEdit()) {
+      protection.setDomainEdit(false);
+    }
+  }
+}
