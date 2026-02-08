@@ -1,0 +1,562 @@
+/**
+ * SISTEMA DE ASISTENCIA VIRTUAL - AUTOMATIZACIÓN
+ * 
+ * Este script automatiza el traspaso de RUTs desde la hoja "RESPUESTAS" 
+ * (formulario de Google) hacia la hoja "SISTEMA" (base de datos).
+ * 
+ * Características:
+ * - Procesa cada envío del formulario inmediatamente (onFormSubmit)
+ * - Valida duplicados antes de copiar a SISTEMA
+ * - Marca el estado de procesamiento en columna PROCESADO
+ * - Optimizado para manejar múltiples envíos simultáneos
+ */
+
+// ============================================================================
+// CONFIGURACIÓN PRINCIPAL
+// ============================================================================
+
+const CONFIG = {
+  // Nombres de las hojas
+  HOJA_RESPUESTAS: "RESPUESTAS",
+  HOJA_SISTEMA: "SISTEMA",
+  
+  // Columnas en hoja RESPUESTAS (índice base 0)
+  COL_RESPUESTAS: {
+    MARCA_TEMPORAL: 0,  // Columna A
+    RUT: 1,             // Columna B
+    PROCESADO: 2        // Columna C
+  },
+  
+  // Columnas en hoja SISTEMA (índice base 0)
+  COL_SISTEMA: {
+    RUT: 0,             // Columna A
+    VALIDACION: 1       // Columna B (u otra columna donde está el RUT)
+  },
+  
+  // Estados de procesamiento
+  ESTADOS: {
+    PROCESADO: "PROCESADO",
+    DUPLICADO: "DUPLICADO",
+    ERROR: "ERROR"
+  }
+};
+
+// ============================================================================
+// FUNCIÓN PRINCIPAL - TRIGGER ON FORM SUBMIT
+// ============================================================================
+
+/**
+ * Función que se ejecuta automáticamente cuando se envía el formulario
+ * Esta función debe configurarse como trigger de tipo "On form submit"
+ */
+function onFormSubmit(e) {
+  try {
+    // Obtener la hoja de respuestas y la fila que se acaba de agregar
+    const sheet = e.range.getSheet();
+    const row = e.range.getRow();
+    
+    // Verificar que estamos en la hoja correcta
+    if (sheet.getName() !== CONFIG.HOJA_RESPUESTAS) {
+      return;
+    }
+    
+    // Procesar el RUT de la nueva fila
+    procesarNuevoRUT(sheet, row);
+    
+  } catch (error) {
+    Logger.log("Error en onFormSubmit: " + error.toString());
+    // Marcar la fila con error si es posible
+    try {
+      e.range.getSheet()
+        .getRange(e.range.getRow(), CONFIG.COL_RESPUESTAS.PROCESADO + 1)
+        .setValue(CONFIG.ESTADOS.ERROR);
+    } catch (e2) {
+      Logger.log("No se pudo marcar el error: " + e2.toString());
+    }
+  }
+}
+
+// ============================================================================
+// FUNCIONES DE PROCESAMIENTO
+// ============================================================================
+
+/**
+ * Procesa un RUT recién ingresado desde el formulario
+ * @param {Sheet} hojaRespuestas - La hoja de respuestas
+ * @param {number} fila - Número de fila a procesar
+ */
+function procesarNuevoRUT(hojaRespuestas, fila) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const hojaSistema = ss.getSheetByName(CONFIG.HOJA_SISTEMA);
+  
+  if (!hojaSistema) {
+    throw new Error("No se encuentra la hoja " + CONFIG.HOJA_SISTEMA);
+  }
+  
+  // Obtener el RUT de la fila actual
+  const rut = hojaRespuestas
+    .getRange(fila, CONFIG.COL_RESPUESTAS.RUT + 1)
+    .getValue()
+    .toString()
+    .trim()
+    .toUpperCase();
+  
+  // Validar que el RUT no esté vacío
+  if (!rut) {
+    marcarEstado(hojaRespuestas, fila, CONFIG.ESTADOS.ERROR);
+    return;
+  }
+  
+  // Verificar si el RUT ya existe en SISTEMA
+  if (rutExisteEnSistema(hojaSistema, rut)) {
+    marcarEstado(hojaRespuestas, fila, CONFIG.ESTADOS.DUPLICADO);
+    Logger.log("RUT duplicado detectado: " + rut);
+    return;
+  }
+  
+  // Copiar el RUT a la hoja SISTEMA
+  const resultado = copiarRUTaSistema(hojaSistema, rut);
+  
+  if (resultado) {
+    marcarEstado(hojaRespuestas, fila, CONFIG.ESTADOS.PROCESADO);
+    Logger.log("RUT procesado exitosamente: " + rut);
+  } else {
+    marcarEstado(hojaRespuestas, fila, CONFIG.ESTADOS.ERROR);
+    Logger.log("Error al procesar RUT: " + rut);
+  }
+}
+
+/**
+ * Verifica si un RUT ya existe en la hoja SISTEMA
+ * @param {Sheet} hojaSistema - La hoja SISTEMA
+ * @param {string} rut - El RUT a buscar
+ * @return {boolean} - true si el RUT existe, false si no
+ */
+function rutExisteEnSistema(hojaSistema, rut) {
+  const ultimaFila = hojaSistema.getLastRow();
+  
+  // Si solo hay encabezados, no hay RUTs
+  if (ultimaFila <= 1) {
+    return false;
+  }
+  
+  // Obtener todos los RUTs de la columna RUT en SISTEMA
+  const rango = hojaSistema.getRange(2, CONFIG.COL_SISTEMA.RUT + 1, ultimaFila - 1, 1);
+  const valores = rango.getValues();
+  
+  // Normalizar y buscar el RUT
+  const rutBuscado = normalizarRUT(rut);
+  
+  for (let i = 0; i < valores.length; i++) {
+    const rutSistema = normalizarRUT(valores[i][0].toString());
+    if (rutSistema === rutBuscado) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+/**
+ * Copia un RUT a la primera fila disponible en la columna RUT de SISTEMA
+ * y activa las validaciones necesarias
+ * @param {Sheet} hojaSistema - La hoja SISTEMA
+ * @param {string} rut - El RUT a copiar
+ * @return {boolean} - true si se copió exitosamente, false si hubo error
+ */
+function copiarRUTaSistema(hojaSistema, rut) {
+  try {
+    // Buscar la primera fila vacía en la columna RUT (columna A)
+    const primeraFilaDisponible = encontrarPrimeraFilaVacia(hojaSistema);
+    
+    if (primeraFilaDisponible === -1) {
+      Logger.log("Error: No se encontró una fila disponible en SISTEMA");
+      return false;
+    }
+    
+    // Insertar el RUT en la primera fila disponible de la columna A
+    hojaSistema.getRange(primeraFilaDisponible, CONFIG.COL_SISTEMA.RUT + 1).setValue(rut);
+    
+    // Forzar flush para asegurar que se escribió
+    SpreadsheetApp.flush();
+    
+    Logger.log("RUT copiado en fila: " + primeraFilaDisponible);
+    
+    // IMPORTANTE: Activar las validaciones y envío de correo
+    // Esperamos un momento para que la hoja se actualice
+    Utilities.sleep(500);
+    
+    try {
+      // Activar las funciones de validación
+      activarValidacionesParaFila(hojaSistema, primeraFilaDisponible);
+    } catch (validationError) {
+      Logger.log("Error al activar validaciones: " + validationError.toString());
+      // Continuar aunque haya error
+    }
+    
+    return true;
+  } catch (error) {
+    Logger.log("Error al copiar RUT a SISTEMA: " + error.toString());
+    return false;
+  }
+}
+
+/**
+ * Activa las validaciones y envío de correo para una fila específica
+ * VERSIÓN MEJORADA que usa funciones auxiliares específicas
+ * @param {Sheet} hojaSistema - La hoja SISTEMA
+ * @param {number} fila - Número de fila a procesar
+ */
+function activarValidacionesParaFila(hojaSistema, fila) {
+  Logger.log("=== Activando validaciones para fila: " + fila + " ===");
+  
+  try {
+    // PASO 1: Validar el RUT
+    const rutValido = validarRutEnFila(hojaSistema, fila);
+    Logger.log("✓ Validación de RUT completada - Resultado: " + (rutValido ? "VÁLIDO" : "NO VÁLIDO"));
+    
+    // Esperar un momento para que se actualice la hoja
+    Utilities.sleep(500);
+    
+    // PASO 2: Solo enviar correo si el RUT es válido
+    if (rutValido) {
+      const correoEnviado = enviarCorreoEnFila(hojaSistema, fila);
+      if (correoEnviado) {
+        Logger.log("✓ Correo enviado exitosamente");
+      } else {
+        Logger.log("⚠ No se pudo enviar el correo (revisar datos de la fila)");
+      }
+    } else {
+      Logger.log("⚠ RUT no válido, no se enviará correo");
+    }
+    
+    // Forzar actualización
+    SpreadsheetApp.flush();
+    
+    Logger.log("=== Proceso completado para fila: " + fila + " ===");
+    
+  } catch (error) {
+    Logger.log("❌ Error en activarValidacionesParaFila: " + error.toString());
+  }
+}
+
+/**
+ * Valida el RUT de una fila específica y actualiza la columna VALIDACION
+ * Esta es una versión simplificada que NO depende de onEdit
+ * @param {Sheet} hojaSistema - La hoja SISTEMA
+ * @param {number} fila - Número de fila a validar
+ * @return {boolean} - true si el RUT es válido, false si no
+ */
+function validarRutEnFila(hojaSistema, fila) {
+  try {
+    const RUT_COLUMN = 1; // Columna A
+    const VALIDATION_COLUMN = 2; // Columna B
+    
+    // Obtener el RUT de la fila
+    const rutValue = hojaSistema.getRange(fila, RUT_COLUMN).getValue();
+    
+    let validationResult = '';
+    
+    if (!rutValue) {
+      validationResult = '';
+    } else {
+      try {
+        const rutString = String(rutValue).trim();
+        validationResult = validateChileanRut(rutString) ? 'VALIDO' : 'NO VALIDO';
+      } catch (error) {
+        validationResult = 'NO VALIDO';
+        Logger.log("Error al validar RUT en fila " + fila + ": " + error.toString());
+      }
+    }
+    
+    // Escribir el resultado en la columna B
+    hojaSistema.getRange(fila, VALIDATION_COLUMN).setValue(validationResult);
+    
+    Logger.log("RUT validado en fila " + fila + ": " + validationResult);
+    
+    return validationResult === 'VALIDO';
+    
+  } catch (error) {
+    Logger.log("Error en validarRutEnFila: " + error.toString());
+    return false;
+  }
+}
+
+/**
+ * Envía el correo con PDF para una fila específica
+ * Esta es una versión adaptada que NO depende de getActiveRange()
+ * @param {Sheet} hojaSistema - La hoja SISTEMA  
+ * @param {number} fila - Número de fila a procesar
+ * @return {boolean} - true si se envió el correo, false si no
+ */
+function enviarCorreoEnFila(hojaSistema, fila) {
+  try {
+    // Verificar que no sea el encabezado
+    if (fila <= 1) {
+      Logger.log("Saltando fila de encabezado");
+      return false;
+    }
+    
+    // Obtener los datos de la fila
+    const rut = hojaSistema.getRange(fila, 1).getValue(); // Columna A (RUT)
+    const validacion = hojaSistema.getRange(fila, 2).getValue(); // Columna B (VALIDACION)
+    const nombre = hojaSistema.getRange(fila, 3).getValue(); // Columna C (NOMBRE)
+    const correo = hojaSistema.getRange(fila, 10).getValue(); // Columna J (CORREO)
+    const asamblea = hojaSistema.getRange(fila, 12).getValue(); // Columna L (ASAMBLEA)
+    
+    // Verificar que el RUT sea válido antes de enviar
+    if (validacion !== 'VALIDO') {
+      Logger.log("RUT no válido en fila " + fila + ", no se enviará correo");
+      return false;
+    }
+    
+    // Verificar que haya correo
+    if (!correo || correo.toString().trim() === '') {
+      Logger.log("No hay correo en fila " + fila);
+      return false;
+    }
+    
+    // Verificar/generar código
+    let codigo = hojaSistema.getRange(fila, 11).getValue(); // Columna K (CODIGO)
+    if (!codigo) {
+      codigo = generarCodigoUnico(11);
+      hojaSistema.getRange(fila, 11).setValue(codigo);
+    }
+    
+    // Proteger la celda de RUT
+    protegerCeldaRut(hojaSistema, fila);
+    
+    // ID de la plantilla de Google Docs
+    const templateId = '1dt4zffbGfriGzr1Uk10Sri4PJEvWfebmr63Gaobdp-w';
+    
+    // Crear copia de la plantilla
+    const docFile = DriveApp.getFileById(templateId);
+    const copiedFile = docFile.makeCopy('Plantilla temporal');
+    
+    // Acceder al documento copiado
+    const doc = DocumentApp.openById(copiedFile.getId());
+    const body = doc.getBody();
+    
+    // Reemplazar marcadores
+    body.replaceText('{NOMBRE}', nombre || '');
+    body.replaceText('{RUT}', rut || '');
+    body.replaceText('{CODIGO}', codigo || '');
+    body.replaceText('{ASAMBLEA}', asamblea || 'ENERO 2026');
+    
+    // Guardar y cerrar
+    doc.saveAndClose();
+    
+    // Convertir a PDF
+    const pdfBlob = copiedFile.getAs(MimeType.PDF);
+    pdfBlob.setName((nombre || 'Asistencia') + ' - Asistencia.pdf');
+    
+    // Enviar correo
+    const asunto = 'Validación de Asistencia - Asamblea Sindical ' + (asamblea || 'ENERO 2026');
+    const cuerpo = 'Estimado/a ' + (nombre || '') + ',\n\n' +
+                   'Se ha registrado su asistencia a la asamblea sindical del mes de ' + (asamblea || 'ENERO 2026') + '.\n\n' +
+                   '*Si al final del mes aparece con multa en su liquidacion de sueldo, puede apelar con el archivo adjunto en este correo en la pagina de apelación de multa del sindicato.\n\n' +
+                   'https://www.sindicatoslim3.com/afiliados\n\n' + 
+                   'Saludos,\n' +
+                   'Atte. Dpto Comunicaciones SLIM n°3';
+    
+    MailApp.sendEmail({
+      to: correo,
+      subject: asunto,
+      body: cuerpo,
+      attachments: [pdfBlob]
+    });
+    
+    // Eliminar archivo temporal
+    DriveApp.getFileById(copiedFile.getId()).setTrashed(true);
+    
+    // Actualizar columna VALIDACION DE CORREO (columna H)
+    hojaSistema.getRange(fila, 8).setValue('Asistencia enviada al correo');
+    
+    Logger.log("Correo enviado exitosamente a: " + correo + " (fila " + fila + ")");
+    
+    return true;
+    
+  } catch (error) {
+    Logger.log("Error en enviarCorreoEnFila (fila " + fila + "): " + error.toString());
+    return false;
+  }
+}
+
+/**
+ * Encuentra la primera fila vacía en la columna RUT de SISTEMA
+ * Busca desde la fila 2 (después del encabezado) hacia abajo
+ * @param {Sheet} hojaSistema - La hoja SISTEMA
+ * @return {number} - Número de la primera fila vacía, o -1 si no encuentra
+ */
+function encontrarPrimeraFilaVacia(hojaSistema) {
+  const columnRUT = CONFIG.COL_SISTEMA.RUT + 1; // Convertir índice base-0 a base-1
+  const maxFilas = hojaSistema.getMaxRows();
+  
+  // Obtener todos los valores de la columna RUT de una vez (más eficiente)
+  const rangoDatos = hojaSistema.getRange(2, columnRUT, maxFilas - 1, 1);
+  const valores = rangoDatos.getValues();
+  
+  // Buscar la primera celda vacía
+  for (let i = 0; i < valores.length; i++) {
+    const valor = valores[i][0];
+    
+    // Si la celda está vacía (null, undefined, o string vacío)
+    if (!valor || valor.toString().trim() === "") {
+      return i + 2; // +2 porque: i empieza en 0, y empezamos desde fila 2
+    }
+  }
+  
+  // Si no hay filas vacías, retornar -1
+  return -1;
+}
+
+/**
+ * Marca el estado de procesamiento en la columna PROCESADO
+ * @param {Sheet} hoja - La hoja donde marcar
+ * @param {number} fila - La fila donde marcar
+ * @param {string} estado - El estado a marcar
+ */
+function marcarEstado(hoja, fila, estado) {
+  try {
+    const timestamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss");
+    hoja.getRange(fila, CONFIG.COL_RESPUESTAS.PROCESADO + 1)
+        .setValue(estado + " - " + timestamp);
+    SpreadsheetApp.flush();
+  } catch (error) {
+    Logger.log("Error al marcar estado: " + error.toString());
+  }
+}
+
+/**
+ * Normaliza un RUT para comparación (elimina espacios, convierte a mayúsculas)
+ * @param {string} rut - El RUT a normalizar
+ * @return {string} - El RUT normalizado
+ */
+function normalizarRUT(rut) {
+  if (!rut) return "";
+  return rut.toString().trim().toUpperCase().replace(/\s+/g, '');
+}
+
+// ============================================================================
+// FUNCIONES AUXILIARES Y DE MANTENIMIENTO
+// ============================================================================
+
+/**
+ * Función para procesar manualmente filas pendientes (opcional)
+ * Útil para reprocesar filas que tuvieron ERROR o que no tienen estado
+ */
+function procesarFilasPendientes() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const hojaRespuestas = ss.getSheetByName(CONFIG.HOJA_RESPUESTAS);
+  
+  if (!hojaRespuestas) {
+    Logger.log("No se encuentra la hoja " + CONFIG.HOJA_RESPUESTAS);
+    return;
+  }
+  
+  const ultimaFila = hojaRespuestas.getLastRow();
+  
+  // Empezar desde la fila 2 (después del encabezado)
+  for (let fila = 2; fila <= ultimaFila; fila++) {
+    const estado = hojaRespuestas
+      .getRange(fila, CONFIG.COL_RESPUESTAS.PROCESADO + 1)
+      .getValue()
+      .toString();
+    
+    // Si no tiene estado o tiene ERROR, procesar
+    if (!estado || estado.includes(CONFIG.ESTADOS.ERROR)) {
+      Logger.log("Procesando fila pendiente: " + fila);
+      procesarNuevoRUT(hojaRespuestas, fila);
+      
+      // Pausa breve para evitar exceder límites de cuota
+      Utilities.sleep(100);
+    }
+  }
+  
+  Logger.log("Procesamiento de filas pendientes completado");
+}
+
+/**
+ * Función para limpiar todos los estados PROCESADO (útil para reiniciar el sistema)
+ * USAR CON PRECAUCIÓN: Esto permitirá reprocesar todos los RUTs
+ */
+function limpiarEstadosProcesados() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const hojaRespuestas = ss.getSheetByName(CONFIG.HOJA_RESPUESTAS);
+  
+  if (!hojaRespuestas) {
+    Logger.log("No se encuentra la hoja " + CONFIG.HOJA_RESPUESTAS);
+    return;
+  }
+  
+  const ultimaFila = hojaRespuestas.getLastRow();
+  
+  if (ultimaFila <= 1) {
+    Logger.log("No hay filas para limpiar");
+    return;
+  }
+  
+  // Limpiar toda la columna PROCESADO
+  hojaRespuestas
+    .getRange(2, CONFIG.COL_RESPUESTAS.PROCESADO + 1, ultimaFila - 1, 1)
+    .clearContent();
+  
+  Logger.log("Estados limpiados. Total de filas: " + (ultimaFila - 1));
+}
+
+/**
+ * Función de prueba para verificar que todo está configurado correctamente
+ */
+function testConfiguracion() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  
+  Logger.log("=== TEST DE CONFIGURACIÓN ===");
+  
+  // Verificar hojas
+  const hojaRespuestas = ss.getSheetByName(CONFIG.HOJA_RESPUESTAS);
+  const hojaSistema = ss.getSheetByName(CONFIG.HOJA_SISTEMA);
+  
+  Logger.log("Hoja RESPUESTAS encontrada: " + (hojaRespuestas ? "SÍ" : "NO"));
+  Logger.log("Hoja SISTEMA encontrada: " + (hojaSistema ? "SÍ" : "NO"));
+  
+  if (hojaRespuestas) {
+    Logger.log("Filas en RESPUESTAS: " + hojaRespuestas.getLastRow());
+  }
+  
+  if (hojaSistema) {
+    Logger.log("Filas en SISTEMA: " + hojaSistema.getLastRow());
+  }
+  
+  Logger.log("=== FIN DEL TEST ===");
+}
+
+// ============================================================================
+// INSTRUCCIONES DE INSTALACIÓN
+// ============================================================================
+
+/**
+ * PASOS PARA CONFIGURAR EL TRIGGER:
+ * 
+ * 1. En Google Sheets, ir a: Extensiones > Apps Script
+ * 2. Pegar todo este código
+ * 3. Guardar el proyecto (Ctrl+S)
+ * 4. Ir a: Triggers (icono de reloj ⏰ en el menú izquierdo)
+ * 5. Hacer clic en: + Agregar activador (esquina inferior derecha)
+ * 6. Configurar el trigger:
+ *    - Función: onFormSubmit
+ *    - Evento: Desde la hoja de cálculo
+ *    - Tipo de evento: Al enviar formulario
+ * 7. Guardar
+ * 
+ * FUNCIONES DISPONIBLES:
+ * - onFormSubmit: Se ejecuta automáticamente al enviar el formulario
+ * - procesarFilasPendientes: Para reprocesar manualmente filas con ERROR
+ * - limpiarEstadosProcesados: Para limpiar todos los estados (reiniciar sistema)
+ * - testConfiguracion: Para verificar que las hojas están correctamente nombradas
+ * 
+ * NOTAS IMPORTANTES:
+ * - El RUT se debe ingresar solo con dígitos y verificador (ej: 12345678k)
+ * - El sistema detecta automáticamente RUTs duplicados
+ * - Cada fila procesada se marca con: PROCESADO, DUPLICADO o ERROR
+ * - Los logs se pueden ver en: Ver > Registros de ejecución
+ */
