@@ -283,8 +283,154 @@ function validarRutEnFila(hojaSistema, fila) {
 }
 
 /**
- * Envía el correo con PDF para una fila específica
- * Esta es una versión adaptada que NO depende de getActiveRange()
+ * Genera el HTML estilizado para el correo de confirmación de asistencia
+ * @param {string} nombre - Nombre del socio
+ * @param {string} rut - RUT del socio
+ * @param {string} codigo - Código único de verificación
+ * @param {string} asamblea - Mes de la asamblea
+ * @return {string} - HTML completo del correo
+ */
+function generarHTMLCorreo(nombre, rut, codigo, asamblea) {
+  const html = `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Confirmación de Asistencia</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f4f4f4;">
+    
+    <!-- Contenedor principal -->
+    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #f4f4f4;">
+        <tr>
+            <td style="padding: 40px 20px;">
+                
+                <!-- Tarjeta de contenido -->
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+                    
+                    <!-- Header con gradiente -->
+                    <tr>
+                        <td style="background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); padding: 40px 30px; text-align: center; border-radius: 12px 12px 0 0;">
+                            <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700; letter-spacing: -0.5px;">
+                                ✓ Asistencia Confirmada
+                            </h1>
+                            <p style="margin: 10px 0 0 0; color: #e0e7ff; font-size: 16px;">
+                                Asamblea Sindical ${asamblea || 'ENERO 2026'}
+                            </p>
+                        </td>
+                    </tr>
+                    
+                    <!-- Contenido principal -->
+                    <tr>
+                        <td style="padding: 40px 30px;">
+                            
+                            <!-- Saludo -->
+                            <p style="margin: 0 0 25px 0; color: #1f2937; font-size: 16px; line-height: 1.6;">
+                                Estimado/a <strong>${nombre || 'Socio/a'}</strong>,
+                            </p>
+                            
+                            <p style="margin: 0 0 30px 0; color: #4b5563; font-size: 15px; line-height: 1.6;">
+                                Se ha registrado exitosamente su asistencia a la asamblea sindical. A continuación encontrará sus datos de confirmación:
+                            </p>
+                            
+                            <!-- Tarjeta de datos -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background-color: #f9fafb; border-radius: 8px; border: 1px solid #e5e7eb;">
+                                <tr>
+                                    <td style="padding: 25px;">
+                                        
+                                        <!-- RUT -->
+                                        <div style="margin-bottom: 20px;">
+                                            <p style="margin: 0 0 5px 0; color: #6b7280; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">
+                                                RUT
+                                            </p>
+                                            <p style="margin: 0; color: #111827; font-size: 18px; font-weight: 600;">
+                                                ${rut || 'N/A'}
+                                            </p>
+                                        </div>
+                                        
+                                        <!-- Código de verificación -->
+                                        <div style="margin-bottom: 20px;">
+                                            <p style="margin: 0 0 5px 0; color: #6b7280; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">
+                                                Código de Verificación
+                                            </p>
+                                            <p style="margin: 0; color: #3b82f6; font-size: 24px; font-weight: 700; font-family: 'Courier New', monospace; letter-spacing: 2px;">
+                                                ${codigo || 'N/A'}
+                                            </p>
+                                        </div>
+                                        
+                                        <!-- Asamblea -->
+                                        <div>
+                                            <p style="margin: 0 0 5px 0; color: #6b7280; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;">
+                                                Asamblea
+                                            </p>
+                                            <p style="margin: 0; color: #111827; font-size: 18px; font-weight: 600;">
+                                                ${asamblea || 'ENERO 2026'}
+                                            </p>
+                                        </div>
+                                        
+                                    </td>
+                                </tr>
+                            </table>
+                            
+                            <!-- Información importante -->
+                            <div style="margin-top: 30px; padding: 20px; background-color: #fef3c7; border-left: 4px solid #f59e0b; border-radius: 6px;">
+                                <p style="margin: 0 0 10px 0; color: #92400e; font-size: 14px; font-weight: 700;">
+                                    ⚠️ Información Importante
+                                </p>
+                                <p style="margin: 0; color: #78350f; font-size: 14px; line-height: 1.5;">
+                                    Si al final del mes aparece con multa en su liquidación de sueldo, puede apelar presentando este correo de confirmación en la página de apelación de multa del sindicato.
+                                </p>
+                            </div>
+                            
+                            <!-- Botón de acción -->
+                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin-top: 35px;">
+                                <tr>
+                                    <td style="text-align: center;">
+                                        <a href="https://www.sindicatoslim3.com/aplicaciones/app-login" style="display: inline-block; padding: 14px 32px; background-color: #3b82f6; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 15px; box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);">
+                                            Ir al Portal de Afiliados
+                                        </a>
+                                    </td>
+                                </tr>
+                            </table>
+                            
+                        </td>
+                    </tr>
+                    
+                    <!-- Footer -->
+                    <tr>
+                        <td style="padding: 30px; background-color: #f9fafb; border-radius: 0 0 12px 12px; border-top: 1px solid #e5e7eb;">
+                            <p style="margin: 0 0 15px 0; color: #6b7280; font-size: 14px; line-height: 1.6; text-align: center;">
+                                Este es un correo automático, por favor no responder.
+                            </p>
+                            <p style="margin: 0; color: #9ca3af; font-size: 13px; text-align: center;">
+                                <strong>Dpto. Comunicaciones SLIM n°3</strong><br>
+                                Sindicato Libre de Trabajadores de Metro S.A.
+                            </p>
+                            <p style="margin: 15px 0 0 0; text-align: center;">
+                                <a href="https://www.sindicatoslim3.com" style="color: #3b82f6; text-decoration: none; font-size: 13px;">
+                                    www.sindicatoslim3.com
+                                </a>
+                            </p>
+                        </td>
+                    </tr>
+                    
+                </table>
+                
+            </td>
+        </tr>
+    </table>
+    
+</body>
+</html>
+  `;
+  
+  return html;
+}
+
+/**
+ * Envía el correo con HTML estilizado para una fila específica
+ * VERSIÓN OPTIMIZADA - Sin generación de PDF
  * @param {Sheet} hojaSistema - La hoja SISTEMA  
  * @param {number} fila - Número de fila a procesar
  * @return {boolean} - true si se envió el correo, false si no
@@ -326,53 +472,37 @@ function enviarCorreoEnFila(hojaSistema, fila) {
     // Proteger la celda de RUT
     protegerCeldaRut(hojaSistema, fila);
     
-    // ID de la plantilla de Google Docs
-    const templateId = '1dt4zffbGfriGzr1Uk10Sri4PJEvWfebmr63Gaobdp-w';
+    // Generar el HTML del correo
+    const htmlBody = generarHTMLCorreo(nombre, rut, codigo, asamblea);
     
-    // Crear copia de la plantilla
-    const docFile = DriveApp.getFileById(templateId);
-    const copiedFile = docFile.makeCopy('Plantilla temporal');
+    // Configurar el asunto del correo
+    const asunto = 'Confirmación de Asistencia - Asamblea Sindical ' + (asamblea || 'ENERO 2026');
     
-    // Acceder al documento copiado
-    const doc = DocumentApp.openById(copiedFile.getId());
-    const body = doc.getBody();
+    // Versión en texto plano (fallback para clientes de correo que no soportan HTML)
+    const textoPlano = 'Estimado/a ' + (nombre || '') + ',\n\n' +
+                       'Se ha registrado su asistencia a la asamblea sindical del mes de ' + (asamblea || 'ENERO 2026') + '.\n\n' +
+                       'DATOS DE CONFIRMACIÓN:\n' +
+                       '- RUT: ' + (rut || '') + '\n' +
+                       '- Código de Verificación: ' + (codigo || '') + '\n' +
+                       '- Asamblea: ' + (asamblea || 'ENERO 2026') + '\n\n' +
+                       'INFORMACIÓN IMPORTANTE:\n' +
+                       'Si al final del mes aparece con multa en su liquidación de sueldo, puede apelar con este correo de confirmación en la página de apelación de multa del sindicato.\n\n' +
+                       'Portal de Afiliados: https://www.sindicatoslim3.com/afiliados\n\n' +
+                       'Saludos,\n' +
+                       'Atte. Dpto Comunicaciones SLIM n°3';
     
-    // Reemplazar marcadores
-    body.replaceText('{NOMBRE}', nombre || '');
-    body.replaceText('{RUT}', rut || '');
-    body.replaceText('{CODIGO}', codigo || '');
-    body.replaceText('{ASAMBLEA}', asamblea || 'ENERO 2026');
-    
-    // Guardar y cerrar
-    doc.saveAndClose();
-    
-    // Convertir a PDF
-    const pdfBlob = copiedFile.getAs(MimeType.PDF);
-    pdfBlob.setName((nombre || 'Asistencia') + ' - Asistencia.pdf');
-    
-    // Enviar correo
-    const asunto = 'Validación de Asistencia - Asamblea Sindical ' + (asamblea || 'ENERO 2026');
-    const cuerpo = 'Estimado/a ' + (nombre || '') + ',\n\n' +
-                   'Se ha registrado su asistencia a la asamblea sindical del mes de ' + (asamblea || 'ENERO 2026') + '.\n\n' +
-                   '*Si al final del mes aparece con multa en su liquidacion de sueldo, puede apelar con el archivo adjunto en este correo en la pagina de apelación de multa del sindicato.\n\n' +
-                   'https://www.sindicatoslim3.com/afiliados\n\n' + 
-                   'Saludos,\n' +
-                   'Atte. Dpto Comunicaciones SLIM n°3';
-    
+    // Enviar correo con HTML
     MailApp.sendEmail({
       to: correo,
       subject: asunto,
-      body: cuerpo,
-      attachments: [pdfBlob]
+      body: textoPlano,  // Texto plano como fallback
+      htmlBody: htmlBody  // HTML como contenido principal
     });
-    
-    // Eliminar archivo temporal
-    DriveApp.getFileById(copiedFile.getId()).setTrashed(true);
     
     // Actualizar columna VALIDACION DE CORREO (columna H)
     hojaSistema.getRange(fila, 8).setValue('Asistencia enviada al correo');
     
-    Logger.log("Correo enviado exitosamente a: " + correo + " (fila " + fila + ")");
+    Logger.log("Correo HTML enviado exitosamente a: " + correo + " (fila " + fila + ")");
     
     return true;
     
@@ -381,6 +511,7 @@ function enviarCorreoEnFila(hojaSistema, fila) {
     return false;
   }
 }
+
 
 /**
  * Encuentra la primera fila vacía en la columna RUT de SISTEMA
@@ -528,6 +659,52 @@ function testConfiguracion() {
   }
   
   Logger.log("=== FIN DEL TEST ===");
+}
+
+// ============================================================================
+// FUNCIONES AUXILIARES PARA ENVÍO DE CORREO
+// ============================================================================
+
+/**
+ * Genera un código único alfanumérico
+ * @param {number} length - Longitud del código a generar
+ * @return {string} - Código generado
+ */
+function generarCodigoUnico(length) {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
+/**
+ * Protege la celda de la columna RUT para evitar modificaciones
+ * @param {Sheet} hoja - La hoja donde proteger
+ * @param {number} fila - Número de fila a proteger
+ */
+function protegerCeldaRut(hoja, fila) {
+  try {
+    if (fila > 1) {
+      const celdaRut = hoja.getRange(fila, 1); // Columna A (RUT)
+      const protection = celdaRut.protect().setDescription('RUT Protegido - Fila ' + fila);
+      
+      // Establecer solo al usuario actual como editor (administrador)
+      const me = Session.getEffectiveUser();
+      protection.addEditor(me);
+      protection.removeEditors(protection.getEditors());
+      
+      if (protection.canDomainEdit()) {
+        protection.setDomainEdit(false);
+      }
+      
+      Logger.log("RUT protegido en fila " + fila);
+    }
+  } catch (error) {
+    Logger.log("Advertencia al proteger RUT: " + error.toString());
+    // No lanzar error, solo registrar
+  }
 }
 
 // ============================================================================
